@@ -1,0 +1,21 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. $WM_PROJECT_DIR/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+restore0Dir
+runApplication $(getApplication)
+
+# (
+#     # cd depInitialState || exit
+#
+#     # runApplication blockMesh  # TODO: replace with correct mesh generation command
+#     # maybe add the renumber command
+#
+#     # runApplication decomposePar
+#     # runParallel $(getApplication)
+#     # runApplication reconstructPar -latestTime
+#     # rm -f log.reconstructPar
+# )
+
+#------------------------------------------------------------------------------

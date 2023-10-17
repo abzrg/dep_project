@@ -1,0 +1,514 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2206                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// TODO: replace header with the correct openfoam version
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      particleProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+/**
+ * Few references:
+ *
+ * [1]German OpenFOAM User meeting 2017 (GOFUN 2017), Particle
+ * Simulation with OpenFOAM: Introduction, Fundamentals and
+ * Applications by ROBERT KASPER, Chair of Modeling and Simulation,
+ * University of Rostock
+ *
+ * [2] LPT for erosion modeling in OpenFOAM: Differences between
+ * solidParticle and kinematicParcel, and how to add erosion modeling
+ * by Alejandro Lopez
+ *
+ * [3]
+ * https://www.cemf.ir/wp-content/uploads/2020/06/particle-Tracer.pdf
+ *
+ * [4]
+ * http://www.tfd.chalmers.se/~hani/kurser/OS_CFD_2013/AlejandroLopez/LPT_for_erosionModelling_report.pdf
+*/
+
+/*
+  In this subdictionary, one set the settings related to interpolation
+  schemes, integration scheme and whether this cloud is used for
+  transient or steady solver (here we use it for transient
+  solver). Note that we used `cell` interpolation scheme for all
+  variables. You could also use `cellPoint` scheme for velocity to
+  have more accurate local velocity estimations. However, with this
+  scheme, particle (tracer) velocities reach zero when they touch
+  walls. Here we don't want to see such sticky trancers on the walls.
+
+  source: https://www.cemf.ir/wp-content/uploads/2020/06/particle-Tracer.pdf
+*/
+solution
+{
+    active          true;  // Activate or deactivate the particle cloud
+    coupled         false; // If source terms are calculated (Enable/Disable phase coupling)
+    transient       yes;   // Transient of steady-state solution
+    cellValueSourceCorrection off; // Enable/disable correction of momentum transferred to the Eulerian phase
+    //  maxCo           0.3;  // Maximum Courant (CFL) number
+
+    /**
+     * In the particular case of a coupled simulation, the
+     * 'sourceTerms' dictionary entry allows the user to specify what
+     * kind of scheme to use, which can be set to 'explicit' or
+     * 'semiImplicit', as well as the relaxation factors, which have
+     * to be preceded by the name of the field they are going to be
+     * applied on (default value is 1)
+     */
+    sourceTerms  // TODO: ?
+    {
+        schemes
+        {
+            //  U               explicit 1;
+
+            // 'explicit' or 'semiImplicit', 'relaxCoeff' for each of the fields
+        }
+    }
+
+    // Interpolation/integration schemes for the Lagrangian Particle
+    // Tracking and treatment of source terms
+    interpolationSchemes
+    {
+        // cell: Uses cell values for force calculations,
+        // cellPoint: interpolates value based on neighboring cells
+        rho         cell;
+        U           cellPoint;
+        mu          cell;
+        EdotGradE   cellPoint;
+
+        /* Available schemes are: cell, cellPatchConstrained,
+        cellPoint cellPointFace, cellPointWallModified, pointMVC */
+    }
+
+    // FIXME: What should be done about it?
+    // TODO: Check for meaning of this option
+    //averagingMethod basic;
+
+    integrationSchemes
+    {
+        U               Euler;  // Integration method for velocity equation
+    }
+
+}
+
+/**
+ * Particle (constant) properties are defined in `constantProperties` sub-dictionary.
+ * The most important properties here (in this simulation) is
+ * particle density that is similar to fluid density
+ *
+ * 'parcelTypeId'
+ *     Parcel type id - used for post-processing to flag the type
+ *     of parcels issued by this cloud
+ *
+ * 'rhoMin'
+ *     Minimum density [kg/m3]
+ *
+ * 'minParticleMass' -> 'minParcelMass' (Renamed minParticleMass -> minParcelMass by Henry Weller in OpenFOAM-5x)
+ *     Minimum parcel mass [kg]
+ *
+ * 'rho0'
+ *     Particle density [kg/m3]
+ *
+ * 'youngsModulus'
+ *
+ */
+constantProperties
+{
+    parcelTypeId    1;
+    rhoMin          1e-15;
+    minParticleMass 1e-15;
+
+    rho0            1050;  // Particle Density (kg/m^3)
+    youngsModulus   1e5;   // Constant of proportionality relating the deformation to the applied stress for your particles (N/m2)
+    poissonsRatio   0.35;  // Ratio of traverse to axial strain for your particles (dimensionless)
+    constantVolume  false;  // TODO: ?
+
+    // FIXME(reza): What should be done about it?
+    // omega           1600000;
+    //omega2           0.0628e06;
+}
+
+/**
+ * In 'subModels' sub-dictionary you will find all the related sub-models
+ * for particle tracking in the simulation. 'particleForces' sub-dictionary
+ * specifies all types of * forces that you want to act on parcels.
+ * Here we included 'sphereDrag' and 'gravity' forces. Note that the value of 'g'
+ * vector in 'constant/g' file is '(0 0 0)', which vanishes the effect of gravity.
+ * A variety of forces can be applied on parcels. The table below lists some of
+ * the most important ones.
+ *
+ * - 'sphereDrag'
+ *       Drag force for isolated sherical particles (very dilute particle density)
+ *       at low Reynolds numbers
+ * - 'SchillerNaumannDrag'
+ *       Drag force for isolated spherical particles (very dilute particle density)
+ *       from low to high Regynolds numbers
+ * - 'NonShphereDrag'
+ *       Similar to 'SchillerNaumannDrag' but for non-spherical parcels.
+ *       You need to specify the sphericity of parcels, 'phi', for this model
+ * - 'WenYuDrag'
+ *       Spherical drag force for multiphase flows form very dilute up
+ *       to moderate density of parcels
+ * - 'ErgunWenYuDrag'
+ *       Similar to 'WenYuDrag' but for the whole range of fluid volume fraction
+ * - 'distortedShereDrag'
+ *       Drag force for distorted particles
+ * - 'SaffmanMeiLiftForce'
+ *       Saffman-Mei particle lift force model applicable to spherical particles
+ * - 'pressureGradient'
+ *       Calculate pressure gradient force
+ * - 'virtualMass'
+ *       Calculate virtual mass force
+ * - 'gravity'
+ *       Calculate gravity force
+ * - 'paramagnetic'
+ *       Calculate particle paramagnetic (magnetic field) force
+ *
+ * The next sub-dictionary is 'injectModels' that defines the parcel injection properties.
+ * You can find any number of injection points and models in a single simulation.
+ * Here, we defined two injection points: 'topInjection' and 'bottomInjection'.
+ * Parcels are injected from boundary patches 'topInlet' and 'bottomInlet'.
+ * The size of the particles is around 100 micrometers.
+ * Small particles have small time constant and so they almost follow streamline of the flow.
+ * The lower time constant a particle has, the better it follows streamline of flow.
+ *
+ * NOTE:
+ *     Various types of injections can be specified for 'injectionModels'.
+ *     Some of them are 'cellZoneInjection', 'codeInjection', 'fieldActivatedInjection',
+ *     'inflationInjection', 'patchInjection', and 'patchFlowRateInjection'.
+ *     You are referred to the source code for more information.
+ *
+ * 'patchInteractionModel' defines how parcel-wall (patch) contacts should be treated.
+ * Three main approaches can be defined: 'Rebound', 'standardWallInteraction', and 'localInteraction'.
+ * The first and second ones applies the setting for all pathes, while in
+ * the last one you can define separate parcel-wall interaction for each patch.
+ * Using 'localInteraction' enables us to use some parcels as the injection point
+ * and some for parcel exit and the rest as rigid walls.
+ *
+ * In the few last lines, other sub-models are set to none, to deactivate them.
+ */
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        // BF; // I renamed the force to a more descriptive one: DEPBody
+
+        // Body force to avoid particles to hit the wall
+        DEPRepulsive
+        {
+            channelwidth    50e-6;     // [m]
+            channeltype     straight;  // options: straight, curved (default: straight) curved: needs to be implemented
+            repulsiveForce  1e-10;     // [N]
+        }
+
+        DEP  // Dielectrophoretic force
+        {
+            EdotGradE            EdotGradE;    // Electric field strength? [?]
+            // epsilonm          7.101058e-10; // Relative permitivity of the medium/fluid <-- But this is the absolute permitivity of the fluid
+            epsilonm             80.2;         // Relative permitivity of the fluid, []
+            corrFactor           0.5;          // Correction factor, []
+            CMFactor             -0.49;        // Clausius Mossotti factor, []
+        }
+    }
+
+    /**
+     * from: src/lagrangian/intermediate/submodels/Kinematic/InjectionModel/InjectionModel/
+     *
+     * 'InjectionModels' class description
+     *     Templated injection model class.
+     *
+     * The injection model nominally describes the parcel:
+     *     - position
+     *     - diameter
+     *     - velocity
+     *
+     * 'parcelBasisType'
+     *     Parcel basis representation option,
+     *     i.e. constant number of particles OR constant mass per parcel
+     *     - number
+     *     - mass
+     *     - fixed
+     *
+     * 'massTotal'
+     *     Total mass (of parcel) to inject [kg]
+     *     Although it is defined in this sub-dictionary, 'rho', 'alpha',... are defined elsewhere
+     *
+     * 'flowRateProfile'
+     *     Mass flow rate profile for steady calculation [autoPtr<Function1<scalar>>]
+     *     (Flowrate profile relatvie to SOI)
+     *
+     * 'SOI'
+     *     Start time of injection [s]
+     *
+     * 'duration'
+     *     Duration of injection [s]
+     */
+
+    injectionModels
+    {
+        injectPolyStyreneModel // instead of model1
+        {
+            /**
+             * from: src/lagrangian/intermediate/submodels/Kineamtic/InjectionModel/PatchInjection/
+             *
+             * In 'patchInjection' user specifies:
+             * - Total mass to inject
+             * - Name of patch
+             * - Injection duration
+             * - Initial parcel velocity
+             * - Injection volume flow rate
+             *
+             * Properties:
+             * - Parcel diameters obtained by distribution model
+             * - Parcels injected randomly across the patch
+             *
+             * 'type'
+             *     Type of injection model
+             *
+             * 'patchName' (or 'patch' in newer ESI version of OpenFOAM)
+             *     Injectino patch name (the place particle will be injected)
+             *
+             * 'U0'
+             *     Initial parcel velocity (only used for vtFixedType) [m/s]
+             *
+             * 'nParticle'
+             *     Number of particles per parcel, used if 'parcelBasisType' is fixed, []
+             *
+             * 'parcelsPerSecond'
+             *     Injected parcels per second
+             */
+
+            type             patchInjection;
+            parcelBasisType  fixed;
+            patch            inject;
+            U0               (0.000555 0 0);
+            nParticle        1;
+            parcelsPerSecond 2000;
+
+            /**
+             * 'sizeDistribution' specifies Parcel size distribution model
+             *
+             * from: src/lagrangian/distributionModels/lnInclude/distributionModel.H
+             *
+             * 'distributionModel' description:
+             *     A library of runtime-selectable doubly-truncated probability distribution
+             *     models. Returns random samples based on given distribution parameters.
+             *
+             * Available distribution models include:
+             * - binned
+             * - exponential
+             * - fixedValue
+             * - general
+             * - multi-normal
+             * - normal
+             * - Rosin-Rammler
+             * - Mass-based Rosin-Rammler
+             * - uniform
+             */
+
+            /**
+             * from: src/lagrangian/distributionModels/fixedValue/fixedValue.H
+             *
+             * 'fixedValue' description
+             *     Particle-size distribution model wherein samples are given fixed values.
+             *
+             * value
+             *    Fixed value for size (diameter of particles?) [?]
+             *
+             */
+
+            sizeDistribution
+            {
+                type        fixedValue;
+                fixedValueDistribution
+                {
+                    value   0.000010;
+                }
+
+                /**
+                 * NOTE
+                 *     Instead of specifying each individual size you could use a
+                 *     size distribution profile i.e. type normal;
+                 */
+            }
+
+            flowRateProfile constant 1;
+            massTotal                0;
+            SOI                      0;
+            duration                 0.5;
+        }
+    }
+
+    dispersionModel none;
+
+    collisionModel none;  //add
+
+    patchInteractionModel localInteraction;
+
+    localInteractionCoeffs
+    {
+        patches
+        (
+            wall
+            {
+                type rebound;
+                e    1;
+                mu   0;
+            }
+
+            down
+            {
+                type rebound;
+                e    1;
+                mu   0;
+            }
+
+            up
+            {
+                type rebound;
+                e    1;
+                mu   0;
+            }
+
+            // "out.*x1"
+            // {
+            //     type escape;
+            // }
+
+            out50x1
+            {
+                type escape;
+            }
+            out100x1
+            {
+                type escape;
+            }
+            out150x1
+            {
+                type escape;
+            }
+            out200x1
+            {
+                type escape;
+            }
+            out250x1
+            {
+                type escape;
+            }
+            out300x1
+            {
+                type escape;
+            }
+            out350x1
+            {
+                type escape;
+            }
+
+            // "out.*x2"
+            // {
+            //     type escape;
+            // }
+
+            out400x2
+            {
+                type escape;
+            }
+            out450x2
+            {
+                type escape;
+            }
+            out500x2
+            {
+                type escape;
+            }
+            out550x2
+            {
+                type escape;
+            }
+            out600x2
+            {
+                type escape;
+            }
+            out650x2
+            {
+                type escape;
+            }
+            out700x2
+            {
+                type escape;
+            }
+
+            // "out.*x3"
+            // {
+            //     type escape;
+            // }
+
+            out750x3
+            {
+                type escape;
+            }
+            out800x3
+            {
+                type escape;
+            }
+            out850x3
+            {
+                type escape;
+            }
+            out900x3
+            {
+                type escape;
+            }
+            out950x3
+            {
+                type escape;
+            }
+            out1000x3
+            {
+                type escape;
+            }
+
+            inlet
+            {
+                type escape;
+            }
+            inject
+            {
+                type escape;
+            }
+         );
+    }
+
+    heatTransferModel none;
+
+    surfaceFilmModel none;
+
+    stochasticCollisionModel none;
+
+    collisionModel none; //pairCollision;
+
+    packingModel none;
+
+    dampingModel none;
+
+    isotropyModel none;
+
+    radiation off;
+}
+
+
+cloudFunctions
+{
+}
+
+
+// ************************************************************************* //

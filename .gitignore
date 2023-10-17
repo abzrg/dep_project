@@ -1,0 +1,5 @@
+log*
+*.msh
+darwin64*/
+*.o
+*.dep

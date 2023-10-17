@@ -1,0 +1,231 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2206                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      V;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dimensions      [1 2 -3 0 0 -1 0]; // Volt
+
+internalField   uniform 0;
+
+boundaryField
+{
+    "inlet|inject|up|wall|out.*"
+    {
+        type            zeroGradient;
+    }
+
+    down
+    {
+        /* ---
+
+        Mixed (Robin?) boundary condition:
+
+            V_{f} = w*V_{ref} + (1 − w)*(V_{c} + d*grad(V_ref))
+
+        - V_{f}: face value
+        - V_{c}: (nearest) cell value
+        - V_{ref}: reference value
+        - d: face-to-cell value
+        - w: value fraction
+
+        --- */
+        type            mixed;
+        refGradient     uniform 0;  // zeroGradient everywhere
+        refValue        #codeStream
+        {
+            codeInclude
+            #{
+                #include "fvCFD.H"
+                void printHello()
+                {
+                    Info<< "Hello\n";
+                }
+            #};
+
+            codeOptions
+            #{
+                -I$(LIB_SRC)/finiteVolume/lnInclude \
+                -I$(LIB_SRC)/meshTools/lnInclude
+
+            #};
+
+            codeLibs
+            #{
+                -lfiniteVolume \
+                -lmeshTools
+            #};
+
+            code
+            #{
+                // Access to current 'boundaryField' subdictionary
+                // (parent: 'down'; parent.parent: 'boundaryField')
+                const IOdictionary& d = static_cast<const IOdictionary&>(dict.parent().parent());
+
+                // Access to mesh database
+                const fvMesh& mesh = refCast<const fvMesh>(d.db());
+
+                // Get the name of the current boundary patch (from this file)
+                const word patchName = dict.dictName();
+
+                // Access to specific patch in boundary by name
+                const label id = mesh.boundary().findPatchID(patchName);
+                const fvPatch& patch = mesh.boundary()[id];  // boundary is a List of fvPatches?
+
+                // Initialize the electric potential field
+                scalarField V(patch.size(), Zero);
+
+                // Some constants
+                const scalar elecVoltage = 5;  // [V]
+                const scalar elecAngle = degToRad(20);  // [rad]
+                const scalar elecWidth = 50e-6; // It is assumed that two electrodes have the same width, [m]
+                const scalar gap = 30e-6;  // [m]
+                const scalar xStartElec = 200e-6; // [m]
+                const scalar yStartElec = 0.0; // [m]
+                const scalar yEndElec = 950e-6; // Electrodes are not to be above this line [m]
+
+                // TODO: check for obstacle height
+
+                // For all cells in the patch
+                forAll(V, i)
+                {
+                    // Coordinates of face center
+                    // const scalar y = patch.Cf()[i][1]; //  0: x, 1: y, z: 2
+                    const vector posCf = patch.Cf()[i]; // position (vector) of the center of the face of the boundary cell
+                    const scalar x = posCf.x();
+                    const scalar y = posCf.y();
+
+                    if
+                    (
+                        // Above first electrode's left edge
+                        y > (tan(elecAngle)*(x - xStartElec) + yStartElec)
+
+                        // Above the electrodes
+                     || y > yEndElec
+
+                        // Below second electrode's right edge line
+                     || y < (tan(elecAngle)*(x - (xStartElec + (2*elecWidth + gap)/sin(elecAngle))) + yStartElec)
+
+                        // Between two electrodes
+                     || (
+                            // Below the first electrode's right edge
+                            y < (tan(elecAngle)*(x - (xStartElec + elecWidth/sin(elecAngle))) + yStartElec)
+
+                            // Above the seconed electrode's left edge
+                         && y > (tan(elecAngle)*(x - (xStartElec + (elecWidth + gap)/sin(elecAngle))) + yStartElec)
+                        )
+                    )
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        if
+                        (
+                            //- Assign potential to the first electrode
+                            //  Above the first electrode's right edge
+                            //y > (tan(elecAngle)*(x - (xStartElec + elecWidth/sin(elecAngle))) + yStartElec)
+
+
+                            //- Assign voltage to the second electrode
+                            //  Above the second electrode's right edge
+                            y > (tan(elecAngle)*(x - (xStartElec + (2*elecWidth + gap)/sin(elecAngle))) + yStartElec)
+
+                            //  Below the second electrode's left edge
+                         && y < (tan(elecAngle)*(x - (xStartElec + (elecWidth + gap)/sin(elecAngle))) + yStartElec)
+                        )
+                        {
+                            V[i] = elecVoltage; // Positive electrode
+                        }
+                        // else
+                        // {
+                        //     V[i] = -elecVoltage; // Negative electrode
+                        // }
+                    }
+                }
+
+                V.writeEntry("", os);
+            #};
+        };
+
+        valueFraction   #codeStream
+        {
+            codeInclude
+            #{
+                #include "fvCFD.H"
+            #};
+
+            codeOptions
+            #{
+                -I$(LIB_SRC)/finiteVolume/lnInclude \
+                -I$(LIB_SRC)/meshTools/lnInclude
+
+            #};
+
+            codeLibs
+            #{
+                -lfiniteVolume \
+                -lmeshTools
+            #};
+            code
+            #{
+                const IOdictionary& d = static_cast<const IOdictionary&>(dict.parent().parent());
+                const fvMesh& mesh = refCast<const fvMesh>(d.db());
+                const word patchName = dict.dictName();
+                const label id = mesh.boundary().findPatchID(patchName);
+                const fvPatch& patch = mesh.boundary()[id];
+
+                scalarField w(patch.size(), Zero);
+
+                // Kinematic constants
+                const scalar elecAngle = degToRad(20);  // [rad]
+                const scalar elecWidth = 50e-6;         // [m]
+                const scalar gap = 30e-6;               // [m]
+                const scalar xStartElec = 200e-6;       // [m]
+                const scalar yStartElec = 0.0;          // [m]
+                const scalar yEndElec = 950e-6;         // [m]
+
+                forAll(w, i)
+                {
+                    const vector posCf = patch.Cf()[i];
+                    const scalar x = posCf.x();
+                    const scalar y = posCf.y();
+
+                    if
+                    (
+                        y > (tan(elecAngle)*(x - xStartElec) + yStartElec)
+                     || y > yEndElec
+                     || y < (tan(elecAngle)*(x - (xStartElec + (2*elecWidth + gap)/sin(elecAngle))) + yStartElec)
+                     || (
+                            y < (tan(elecAngle)*(x - (xStartElec + elecWidth/sin(elecAngle))) + yStartElec)
+                         && y > (tan(elecAngle)*(x - (xStartElec + (elecWidth + gap)/sin(elecAngle))) + yStartElec)
+                        )
+                    )
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        // In electrodes we only have a fixed value (i.e., no gradient contribution)
+                        w[i] = 1;
+                    }
+                }
+
+                w.writeEntry("", os);
+            #}; // End of code
+        }; // End of valueFraction
+    } // End of down boundary
+} // End of Boundary
+
+
+// ************************************************************************* //
