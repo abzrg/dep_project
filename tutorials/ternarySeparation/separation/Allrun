@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+# By default the parallel run is done using 4 cores
+# One can change it at the commandline when invoking this script:
+#
+# $ NUMBER_OF_SUBDOMAINS=8 ./Allrun
+#
+: "${NUMBER_OF_SUBDOMAINS:=4}"
+
+#------------------------------------------------------------------------------
+
+exit 1 # TODO
+# Copy the renumbered mesh from the other case, as they are the same
+cp -r ../initialStateV/constant/polyMesh constant/
+
+# NOTE: mesh is the same so we can just copy the latest time result instead
+# of interpolating it on the mesh.
+
+# runApplication mapFields ../initialStateV -sourceTime latestTime
+latestTime=$(foamListTimes -latestTime -case ../initialStateV)
+cp -r ../initialStateV/"${latestTime}" ./0/
+
+# runApplication mapFields ../initialStateU -sourceTime latestTime
+latestTime=$(foamListTimes -latestTime -case ../initialStateU)
+cp -r ../initialStateU/"${latestTime}" ./0/
+
+if [[  "$1" == "-p" || "$1" == "-parallel" ]]; then
+    NUMBER_OF_SUBDOMAINS=${NUMBER_OF_SUBDOMAINS} runApplication decomposePar
+    runParallel $(getApplication)
+    if [[ "$2" == '-l' || "$2" == "-latestTime" ]]; then
+        runApplication reconstructPar -latestTime
+    else
+        runApplication reconstructPar
+    fi
+else
+    runApplication $(getApplication)
+fi
+
+#------------------------------------------------------------------------------

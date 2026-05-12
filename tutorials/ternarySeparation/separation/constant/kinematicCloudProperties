@@ -1,0 +1,198 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2206                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solution
+{
+    active          true;
+    coupled         false;
+    transient       yes;  // ?
+    cellValueSourceCorrection off;
+    //  maxCo           0.3; // For pimpleFoam
+
+    // Only for coupled (two-way coupling)
+    // cf: cloudSolution.C:168
+    sourceTerms
+    {
+        schemes
+        {
+        }
+    }
+
+    interpolationSchemes
+    {
+        rho         cell;
+        U           cellPoint;
+        mu          cell;
+        EdotGradE   cellPoint;
+    }
+
+    integrationSchemes
+    {
+        U               Euler; // ?
+    }
+
+}
+
+constantProperties
+{
+    parcelTypeId    1;
+    rhoMin          1e-15; // minimum density
+    minParticleMass 1e-15;
+    rho0            1050;  // particle density (PolyStyrene)
+
+    // Should be change probably
+    youngsModulus   1e5;   // [N/m2] ? - for polyStyrene it is: 3.4e9 [N/m2] (or 3.4 GPa)
+
+    poissonsRatio   0.35;  // [], actually it is 0.34
+
+    constantVolume  false; // not sure if we need it
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+
+        // based on gravity
+        DEPRepulsive
+        {
+            channelHeight    30e-6;
+            channeltype     straight;
+            repulsiveForce  1e-10;
+        }
+
+        // based on paramagnetic
+        DEP
+        {
+            EdotGradE            EdotGradE;
+            epsilonm             80.2;
+            corrFactor           0.5;
+            CMFactor             -0.49;
+        }
+    }
+
+    injectionModels
+    {
+        injectPolyStyreneModel
+        {
+            type             patchInjection;     //
+            patch            inject;             //
+            duration         0.5;                // Total duration of particle injection
+            parcelsPerSecond 2000;               // Injected parcels/particles per second
+            parcelBasisType  fixed;              //
+            flowRateProfile  constant 1;         //
+            nParticle        1;                  // Number of particles per parcel
+            massTotal        0;                  // probably useless
+            SOI              0;                  // start of injection
+            U0               (0.000555 0 0);     // initial velocity of the particle/parcel
+
+            sizeDistribution
+            {
+                type        fixedValue;
+                fixedValueDistribution
+                {
+                    value   0.000010;  // particle size
+                }
+            }
+        }
+    }
+
+    dispersionModel none;
+
+    collisionModel none;
+
+    patchInteractionModel localInteraction;
+
+    // Look: StandardWallInteraction< CloudType >
+    localInteractionCoeffs
+    {
+        patches
+        (
+            wall
+            {
+                type rebound; // optionally specify elasticity and restitution coefficients
+                // Optional
+                e    1; // Elasticity coefficient
+                mu   0; // Restitution coefficient
+            }
+
+            down
+            {
+                type rebound;
+                e    1;
+                mu   0;
+            }
+
+            up
+            {
+                type rebound;
+                e    1;
+                mu   0;
+            }
+
+            // With this grouping the total number of all patches will be reporeted
+            "out.*x1"
+            {
+                // type stick;  // particles assigned zero velocity
+                type escape;  // remove particle from the domain
+            }
+
+            "out.*x2"
+            {
+                type escape;
+            }
+
+            "out.*x3"
+            {
+                type escape;
+            }
+
+            inlet
+            {
+                type escape;
+            }
+            inject
+            {
+                type escape;
+            }
+         );
+    }
+
+    heatTransferModel none;
+
+    surfaceFilmModel none;
+
+    stochasticCollisionModel none;
+
+    collisionModel none;
+
+    packingModel none;
+
+    dampingModel none;
+
+    isotropyModel none;
+
+    radiation off;
+}
+
+
+cloudFunctions
+{
+}
+
+
+// ************************************************************************* //

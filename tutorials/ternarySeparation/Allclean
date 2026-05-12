@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/CleanFunctions      # Tutorial clean functions
+#------------------------------------------------------------------------------
+
+(
+    cd initialStateV || exit 1
+    cleanCase0
+)
+
+(
+    cd initialStateU || exit 1
+    cleanCase
+)
+
+(
+    cd separation || exit 1
+    cleanCase
+)
+
+#------------------------------------------------------------------------------

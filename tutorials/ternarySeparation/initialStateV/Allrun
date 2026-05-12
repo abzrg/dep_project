@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+cd "${0%/*}" || exit                            # Run from this directory
+. $WM_PROJECT_DIR/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+# By default the parallel run is done using 4 cores
+# One can change it at the commandline when invoking this script:
+#
+# $ NUMBER_OF_SUBDOMAINS=8 ./Allrun -parallel
+#
+: "${NUMBER_OF_SUBDOMAINS:=4}"
+
+#------------------------------------------------------------------------------
+
+restore0Dir
+
+exit 1 # TODO
+# Generate the mesh
+# runApplication blockMesh
+# or
+# runApplication fluent3DMeshToFoam
+
+if [[  "$1" == "-p" || "$1" == "-parallel" ]]; then
+    NUMBER_OF_SUBDOMAINS=${NUMBER_OF_SUBDOMAINS} runApplication decomposePar
+    runParallel renumberMesh -overwrite
+    runParallel $(getApplication)
+    runApplication reconstructPar -latestTime
+else
+    runApplication renumberMesh -overwrite
+    runApplication $(getApplication)
+fi
+
+#------------------------------------------------------------------------------

@@ -1,0 +1,84 @@
+#!/usr/bin/bash
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+# By default the parallel run is done using 4 cores
+# One can change it at the commandline when invoking this script:
+#
+# $ NUMBER_OF_SUBDOMAINS=8 ./Allrun -parallel
+#
+: "${NUMBER_OF_SUBDOMAINS:=4}"
+
+#------------------------------------------------------------------------------
+
+PARALLEL=false
+if [[ "$1" == "-p" || "$1" == "-parallel" ]]; then
+    PARALLEL=true
+fi
+
+(
+    cd initialStateV || exit 1
+
+    restore0Dir
+
+    # --- Generate the mesh
+    # runApplication blockMesh
+    # or
+    # runApplication fluent3DMeshToFoam
+
+    # --- Run
+    if [[  "$1" == "-p" || "$1" == "-parallel" ]]; then
+        NUMBER_OF_SUBDOMAINS=${NUMBER_OF_SUBDOMAINS} runApplication decomposePar
+        runParallel renumberMesh -overwrite
+        runParallel $(getApplication)
+        runApplication reconstructPar -latestTime
+    else
+        runApplication renumberMesh -overwrite
+        runApplication $(getApplication)
+    fi
+)
+
+(
+    cd initialStateU || exit 1
+
+    # Copy mesh from the fluid flow case
+    cp -r ../initialStateU/constant/polyMesh constant/
+
+    # --- Run
+    if [[  "$1" == "-p" || "$1" == "-parallel" ]]; then
+        NUMBER_OF_SUBDOMAINS=${NUMBER_OF_SUBDOMAINS} runApplication decomposePar
+        runParallel $(getApplication)
+        runApplication reconstructPar -latestTime
+    else
+        runApplication $(getApplication)
+    fi
+)
+
+(
+    cd separation || exit 1
+
+    # Copy the renumbered mesh from the other case, as they are the same
+    cp -r ../initialStateV/constant/polyMesh constant/
+
+    # NOTE: mesh is the same so we can just copy the latest time result instead
+    # of interpolating it on the mesh.
+
+    # runApplication mapFields ../initialStateV -sourceTime latestTime
+    latestTime=$(foamListTimes -latestTime -case ../initialStateV)
+    cp -r ../initialStateV/"${latestTime}" ./0/
+
+    # runApplication mapFields ../initialStateU -sourceTime latestTime
+    latestTime=$(foamListTimes -latestTime -case ../initialStateU)
+    cp -r ../initialStateU/"${latestTime}" ./0/
+
+    if [[  "$1" == "-p" || "$1" == "-parallel" ]]; then
+        NUMBER_OF_SUBDOMAINS=${NUMBER_OF_SUBDOMAINS} runApplication decomposePar
+        runParallel $(getApplication)
+        runApplication reconstructPar
+    else
+        runApplication $(getApplication)
+    fi
+)
+
+#------------------------------------------------------------------------------

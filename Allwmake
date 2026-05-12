@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+cd "${0%/*}" || exit # Run from this directory
+. ${WM_PROJECT_DIR:?}/wmake/scripts/AllwmakeParseArguments
+
+#------------------------------------------------------------------------------
+
+# Libraries
+src/Allwmake $targetType $*
+
+# Applications
+applications/Allwmake $targetType $*
+
+#------------------------------------------------------------------------------

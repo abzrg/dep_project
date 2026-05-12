@@ -1,0 +1,3 @@
+icoUncoupledKinematicParcelDEPFoam.C
+
+EXE = $(FOAM_APPBIN)/icoUncoupledKinematicParcelDEPFoam
